@@ -221,6 +221,19 @@
     .review-consent input { margin-top: 3px; accent-color: var(--blue); }
     .form-honeypot { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0,0,0,0) !important; white-space: nowrap !important; border: 0 !important; }
     .review-form .btn { width: 100%; }
+    .review-actions { display: flex; justify-content: center; margin: -18px auto 34px; }
+    .google-review-button {
+      display: inline-flex; align-items: center; justify-content: center; gap: 14px;
+      max-width: 100%; padding: 13px 20px; border: 1px solid #dce5ee; border-radius: 16px;
+      color: var(--navy); background: #fff; box-shadow: 0 8px 24px rgba(11,31,58,.07);
+      transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+    }
+    .google-review-button:hover { transform: translateY(-2px); border-color: #b8cce0; box-shadow: var(--shadow); }
+    .google-review-mark { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; border-radius: 13px; background: #f4f7fb; font-size: 1.65rem; font-weight: 800; color: #4285f4; }
+    .google-review-copy { display: grid; gap: 1px; }
+    .google-review-copy strong { font-size: .9rem; line-height: 1.35; }
+    .google-review-copy small { color: var(--muted); font-size: .73rem; }
+    .google-review-stars { color: #e99a25; font-size: 1.05rem; letter-spacing: 1px; white-space: nowrap; }
     .review-note { margin: 0; color: #8190a3; font-size: .7rem; line-height: 1.55; text-align: center; }
     .review-status { min-height: 1.2em; margin: 0; color: #087c5b; font-size: .78rem; text-align: center; }
 
@@ -827,6 +840,14 @@
           <p>Έχετε συνεργαστεί μαζί μας; Μοιραστείτε την εμπειρία σας και βοηθήστε άλλους να μας γνωρίσουν.</p>
         </div>
 
+        <div class="review-actions">
+          <a class="google-review-button" href="https://g.page/r/CZkKbX_xom8SEBM/review" target="_blank" rel="noopener noreferrer">
+            <span class="google-review-mark" aria-hidden="true">G</span>
+            <span class="google-review-copy"><strong>Κάντε μας rate και στο Google</strong><small>Αφήστε τη δημόσια αξιολόγησή σας στο Google</small></span>
+            <span class="google-review-stars" aria-label="Αξιολογήστε μας">★★★★★</span>
+          </a>
+        </div>
+
         <div class="reviews-layout">
           <div class="reviews-list" id="published-reviews" aria-live="polite">
             <article class="review-empty">
@@ -1040,19 +1061,49 @@
     });
     document.getElementById('current-year').textContent = new Date().getFullYear();
 
-    /*
-      ΔΗΜΟΣΙΕΥΜΕΝΕΣ ΑΞΙΟΛΟΓΗΣΕΙΣ:
-      Προσθέστε εδώ μόνο πραγματικές αξιολογήσεις που έχουν σταλεί και εγκριθεί.
-      Παράδειγμα:
-      { name: 'Μαρία', rating: 5, text: 'Πολύ καλή και προσεκτική δουλειά.', date: 'Νοέμβριος 2026' }
-      Οι νέες αξιολογήσεις αποστέλλονται στο email της επιχείρησης για έλεγχο· δεν δημοσιεύονται αυτόματα.
-    */
-    const PUBLISHED_REVIEWS = [];
+    // Δημόσιες αξιολογήσεις: Supabase αποθηκεύει τις κριτικές ώστε να
+    // εμφανίζονται σε όλους τους επισκέπτες και όχι μόνο στον browser του αποστολέα.
+    // Συμπληρώστε το Project URL και το Publishable key από το Supabase Dashboard.
+    // Μην βάλετε ποτέ Secret key / service_role key μέσα σε δημόσιο HTML.
+    const REVIEW_DB = {
+      projectUrl: 'https://YOUR_PROJECT_REF.supabase.co',
+      publishableKey: 'YOUR_SUPABASE_PUBLISHABLE_KEY',
+      table: 'site_reviews',
+      refreshMs: 30000
+    };
 
     const publishedReviews = document.getElementById('published-reviews');
-    function renderPublishedReviews() {
+    const reviewStatus = document.getElementById('review-status');
+    const isReviewDatabaseConfigured = () =>
+      REVIEW_DB.projectUrl.startsWith('https://') &&
+      !REVIEW_DB.projectUrl.includes('YOUR_PROJECT_REF') &&
+      REVIEW_DB.publishableKey &&
+      !REVIEW_DB.publishableKey.includes('YOUR_SUPABASE_PUBLISHABLE_KEY');
+
+    function reviewApiUrl(query = '') {
+      return `${REVIEW_DB.projectUrl.replace(/\/$/, '')}/rest/v1/${REVIEW_DB.table}${query}`;
+    }
+
+    function reviewApiHeaders(extra = {}) {
+      return {
+        'apikey': REVIEW_DB.publishableKey,
+        'Authorization': `Bearer ${REVIEW_DB.publishableKey}`,
+        ...extra
+      };
+    }
+
+    function formatReviewDate(value) {
+      if (!value) return '';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '';
+      return new Intl.DateTimeFormat('el-GR', {
+        day: 'numeric', month: 'long', year: 'numeric'
+      }).format(date);
+    }
+
+    function renderPublishedReviews(reviews) {
       publishedReviews.replaceChildren();
-      if (!PUBLISHED_REVIEWS.length) {
+      if (!reviews.length) {
         const empty = document.createElement('article');
         empty.className = 'review-empty';
         const icon = document.createElement('span');
@@ -1060,15 +1111,15 @@
         icon.setAttribute('aria-hidden', 'true');
         icon.textContent = '☆';
         const title = document.createElement('h3');
-        title.textContent = 'Οι πρώτες αξιολογήσεις ξεκινούν από εσάς';
+        title.textContent = 'Γράψτε την πρώτη αξιολόγηση';
         const copy = document.createElement('p');
-        copy.textContent = 'Δεν υπάρχουν ακόμη δημοσιευμένες αξιολογήσεις. Μπορείτε να αφήσετε πρώτοι τη δική σας.';
+        copy.textContent = 'Οι δημοσιευμένες αξιολογήσεις των πελατών μας θα εμφανίζονται εδώ.';
         empty.append(icon, title, copy);
         publishedReviews.append(empty);
         return;
       }
 
-      PUBLISHED_REVIEWS.forEach((review) => {
+      reviews.forEach((review) => {
         const card = document.createElement('article');
         card.className = 'review-card';
         const header = document.createElement('div');
@@ -1078,7 +1129,7 @@
         name.textContent = String(review.name || 'Πελάτης');
         const date = document.createElement('span');
         date.className = 'review-card-date';
-        date.textContent = String(review.date || '');
+        date.textContent = formatReviewDate(review.created_at);
         header.append(name, date);
         const stars = document.createElement('div');
         stars.className = 'review-stars';
@@ -1087,12 +1138,62 @@
         stars.setAttribute('aria-label', `${rating} από 5 αστέρια`);
         stars.textContent = '★'.repeat(rating) + '☆'.repeat(5 - rating);
         const copy = document.createElement('p');
-        copy.textContent = String(review.text || '');
+        copy.textContent = String(review.review || '');
         card.append(header, stars, copy);
         publishedReviews.append(card);
       });
     }
-    renderPublishedReviews();
+
+    async function loadPublishedReviews() {
+      if (!isReviewDatabaseConfigured()) {
+        renderPublishedReviews([]);
+        return;
+      }
+      try {
+        const response = await fetch(reviewApiUrl('?select=id,name,rating,review,created_at&order=created_at.desc&limit=30'), {
+          method: 'GET',
+          headers: reviewApiHeaders({ 'Accept': 'application/json' }),
+          cache: 'no-store'
+        });
+        if (!response.ok) throw new Error(`Supabase (${response.status})`);
+        const reviews = await response.json();
+        renderPublishedReviews(Array.isArray(reviews) ? reviews : []);
+      } catch (error) {
+        console.error('Δεν ήταν δυνατή η φόρτωση αξιολογήσεων:', error);
+        publishedReviews.replaceChildren();
+        const message = document.createElement('p');
+        message.className = 'review-empty';
+        message.textContent = 'Οι αξιολογήσεις δεν είναι προσωρινά διαθέσιμες. Δοκιμάστε ξανά αργότερα.';
+        publishedReviews.append(message);
+      }
+    }
+
+    async function savePublicReview(review) {
+      const response = await fetch(reviewApiUrl('?select=id,name,rating,review,created_at'), {
+        method: 'POST',
+        headers: reviewApiHeaders({
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Prefer': 'return=representation'
+        }),
+        body: JSON.stringify(review)
+      });
+      let result = [];
+      try { result = await response.json(); } catch (_) { /* handled below */ }
+      if (!response.ok) {
+        const message = result?.message || result?.hint || result?.details || `Supabase (${response.status})`;
+        throw new Error(`Δεν αποθηκεύτηκε η αξιολόγηση: ${message}`);
+      }
+      return Array.isArray(result) ? result[0] : result;
+    }
+
+    // Φόρτωση στο άνοιγμα και περιοδική ανανέωση, ώστε οι νέες κριτικές
+    // να εμφανίζονται και σε άλλους επισκέπτες χωρίς να ανανεώσουν τη σελίδα.
+    loadPublishedReviews();
+    window.setInterval(() => {
+      if (!document.hidden) loadPublishedReviews();
+    }, REVIEW_DB.refreshMs);
+    window.addEventListener('focus', loadPublishedReviews);
 
     document.getElementById('review-form').addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -1101,13 +1202,37 @@
       const submitButton = form.querySelector('button[type="submit"]');
       if (!form.reportValidity()) return;
 
+      const formData = new FormData(form);
+      if (String(formData.get('_gotcha') || '').trim()) return;
+      const review = {
+        name: String(formData.get('name') || '').trim(),
+        rating: Number(formData.get('rating')),
+        review: String(formData.get('review') || '').trim()
+      };
+
       submitButton.disabled = true;
       submitButton.textContent = 'Αποστολή...';
       status.textContent = '';
       status.style.color = '#087c5b';
       try {
-        await sendFormToBusinessEmail(form, 'Νέα αξιολόγηση ιστοσελίδας – Στρατάκης');
-        status.textContent = 'Η αξιολόγηση στάλθηκε. Ευχαριστούμε! Θα ελεγχθεί πριν δημοσιευτεί.';
+        if (isReviewDatabaseConfigured()) {
+          // Η κριτική δημοσιεύεται αμέσως αφού αποθηκευτεί επιτυχώς στη βάση.
+          await savePublicReview(review);
+          await loadPublishedReviews();
+          status.textContent = 'Η αξιολόγησή σας δημοσιεύτηκε στο site. Ευχαριστούμε!';
+          // Στέλνουμε και email ειδοποίησης στον ιδιοκτήτη. Η δημοσίευση δεν
+          // ακυρώνεται αν αποτύχει η ξεχωριστή ειδοποίηση email.
+          try {
+            await sendFormToBusinessEmail(form, 'Νέα αξιολόγηση ιστοσελίδας – Στρατάκης');
+          } catch (emailError) {
+            console.warn('Η αξιολόγηση δημοσιεύτηκε, αλλά δεν στάλθηκε email ειδοποίησης:', emailError);
+            status.textContent += ' Η ειδοποίηση email δεν στάλθηκε.';
+          }
+        } else {
+          // Προσωρινή λειτουργία μέχρι να συμπληρωθούν τα Supabase στοιχεία.
+          await sendFormToBusinessEmail(form, 'Νέα αξιολόγηση ιστοσελίδας – Στρατάκης');
+          status.textContent = 'Η αξιολόγηση στάλθηκε με email. Για να εμφανίζεται αυτόματα σε όλους, ολοκληρώστε πρώτα τη σύνδεση της βάσης αξιολογήσεων.';
+        }
         form.reset();
       } catch (error) {
         status.style.color = '#b42318';
